@@ -14,7 +14,7 @@ go install -v -n -a
 
 ## Test
 
-Navigate to the Project's root directory and run the following commands to Test the code.
+Navigate to the Project's root directory to the calculator package and run the following commands to Test the code.
 
 To run Unit Tests run the below command
 ```go
