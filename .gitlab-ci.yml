@@ -1,0 +1,150 @@
+#################################################
+#  Image
+#################################################
+
+image: golang:1.22.0
+
+#################################################
+#  Stages
+#################################################
+
+stages:
+  - build
+  - test
+  - report
+  - deploy
+
+#################################################
+#  Workflow rules to avoid duplicate pipelines
+#################################################
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+#################################################
+#  Build Stage
+#################################################
+
+go-build:
+  stage: build
+  when: always
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      variables:
+        CUSTOM_MR_VARIABLE: "false"
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      variables:
+        CUSTOM_MR_VARIABLE: "true"
+  script:
+    - go install -v -n -a
+    - echo "CUSTOM_MR_VARIABLE=$CUSTOM_MR_VARIABLE" > build.env
+    - echo $CUSTOM_MR_VARIABLE
+  artifacts:
+    reports:
+      dotenv: build.env
+
+#################################################
+#  Testing Stages
+#################################################
+
+unit-test:
+  before_script:
+    - echo $CUSTOM_MR_VARIABLE
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: manual
+    - if: ('$CI_PIPELINE_SOURCE == "merge_request_event"') && ('$CUSTOM_MR_VARIABLE == "true"')
+      when: on_success
+  stage: test
+  needs:
+    - job: go-build
+  script:
+    - go test -v -run Unit ./calculator/ -coverprofile=unit-coverage-report.out
+    - go tool cover -html=unit-coverage-report.out -o unit-coverage-report.html
+    - go tool cover -func=unit-coverage-report.out
+  artifacts:
+    paths:
+      - unit-coverage-report.html
+      - unit-coverage-report.out
+    expire_in: 1 hour
+  dependencies:
+    - go-build
+
+integration-test:
+  before_script:
+    - echo $CUSTOM_MR_VARIABLE
+  variables:
+    OPERAND1: 1
+    OPERAND2: 2
+    OPERATOR: "+"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: manual
+    - if: ('$CI_PIPELINE_SOURCE == "merge_request_event"') && ('$CUSTOM_MR_VARIABLE == "true"')
+      when: on_success
+  stage: test
+  needs:
+    - job: go-build
+  script:
+    - go test -v -run Integration ./calculator/ -coverprofile=int-coverage-report.out
+    - go tool cover -html=int-coverage-report.out -o int-coverage-report.html
+    - go tool cover -func=int-coverage-report.out
+  artifacts:
+    paths:
+      - int-coverage-report.html
+      - int-coverage-report.out
+    expire_in: 1 hour
+  after_script:
+    - echo "$OPERAND1 $OPERATOR $OPERAND2"
+    - echo "Calling Main function"
+    - echo "Running test in environment"
+    - go run main.go ${OPERAND1} ${OPERATOR} ${OPERAND2}
+  dependencies:
+    - go-build
+
+#################################################
+#  Reporting Stage
+#################################################
+
+test-report:
+  before_script:
+    - ls
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: always
+    - if: ('$CI_PIPELINE_SOURCE == "merge_request_event"') && ('$CUSTOM_MR_VARIABLE == "true"')
+      when: on_success
+  stage: report
+  needs:
+    - job: integration-test
+    - job: unit-test
+      artifacts: true
+  script:
+    - echo "Below is the Unit Test Coverage Report"
+    - go tool cover -func=unit-coverage-report.out
+    - echo "Below is the Integration Test Coverage Report"
+    - go tool cover -func=int-coverage-report.out
+    - echo "***********************################ FUTURE ENHANCEMENTS BELOW ***********************################"
+    - echo "Below are the two individual report artifacts that will need to be uploaded to a reporting portal"
+    - echo "$CI_PROJECT_DIR/unit-coverage-report.html"
+    - echo "$CI_PROJECT_DIR/int-coverage-report.html"
+
+#################################################
+#  Deployment Stage
+#################################################
+
+
+deploy-to-env:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: always
+    - if: ('$CI_PIPELINE_SOURCE == "merge_request_event"') && ('$CUSTOM_MR_VARIABLE == "true"')
+      when: on_success
+  stage: deploy
+  script:
+    - echo "***********************################ FUTURE ENHANCEMENTS BELOW ***********************################"
+    - echo "This stage might employ environment variables to deploy to a target environment  "
